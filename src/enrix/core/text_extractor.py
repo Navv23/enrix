@@ -3,9 +3,6 @@ from urllib.parse import urljoin, urlparse
 from typing import List, Set
 
 class HTMLTextExtractor(HTMLParser):
-    SKIP_TAGS = {"script", "style", "noscript", "svg", "img"}
-    MIN_TEXT_LEN = 3
-
     def __init__(self, base_url: str = ""):
         super().__init__()
         
@@ -15,13 +12,13 @@ class HTMLTextExtractor(HTMLParser):
         self.links: Set[str] = set()
 
         self._skip_stack: List[str] = []
-
-    # ---------- TAG HANDLING ----------
+        self._skip_tags = {"script", "style", "noscript", "svg", "img"}
+        self._min_text_len = 3
 
     def handle_starttag(self, tag, attrs):
         tag = tag.lower()
 
-        if tag in self.SKIP_TAGS:
+        if tag in self._skip_tags:
             self._skip_stack.append(tag)
             return
 
@@ -50,7 +47,7 @@ class HTMLTextExtractor(HTMLParser):
 
         text = data.strip()
 
-        if (len(text) >= self.MIN_TEXT_LEN and
+        if (len(text) >= self._min_text_len and
             not text.isdigit()):
             self.text_parts.append(text)
 
