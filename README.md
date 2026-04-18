@@ -4,8 +4,6 @@ Enrix is a CLI tool for extracting structured company intelligence (emails, phon
 
 ---
 
-
-## Workflow
 <img src="src/enrix/data/enrix_logo.png" alt="Enrix Workflow" width="300"/>
 
 
