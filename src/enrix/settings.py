@@ -6,3 +6,9 @@ LINKEDIN_REGEX = re.compile(r"(https?:\/\/)?(www\.)?linkedin\.com\/[^\s]+")
 FACEBOOK_REGEX = re.compile(r"(https?:\/\/)?(www\.)?facebook\.com\/[^\s]+")
 INSTAGRAM_REGEX = re.compile(r"(https?:\/\/)?(www\.)?instagram\.com\/[^\s]+")
 WHATSAPP_REGEX = re.compile(r"(https?:\/\/)?(wa\.me|whatsapp\.com)\/[^\s]+")
+
+MAX_WORKERS = 10
+TIMEOUT = 15
+
+SCRAPE_LIMIT = 3
+MIN_TEXT_LEN = 3

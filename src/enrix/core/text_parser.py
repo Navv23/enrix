@@ -1,143 +1,69 @@
-import requests
-from requests.adapters import HTTPAdapter
-from urllib3.util.retry import Retry
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Dict, List, Optional
-
-from enrix.core.text_extractor import HTMLTextExtractor
-from enrix.core.header_factory import HeaderFactory
+from lxml import html
+from urllib.parse import urljoin, urlparse
+from typing import List, Set
 from enrix.settings import (
-    EMAIL_REGEX, PHONE_REGEX, LINKEDIN_REGEX, 
-    WHATSAPP_REGEX, INSTAGRAM_REGEX, FACEBOOK_REGEX
-)
+    MIN_TEXT_LEN
+)                        
 
-class Enricher:
-    def __init__(self, timeout: int = 10, proxy: str = None, max_retries: int = 3):
-        self.timeout = timeout
-        
-        self.session = requests.Session()
-        
-        retry_strategy = Retry(total=max_retries,
-                               backoff_factor=1, 
-                               status_forcelist=[429, 500, 502, 503, 504],
-                               allowed_methods=["GET"])
-        
-        adapter = HTTPAdapter(pool_connections=20, pool_maxsize=20, max_retries=retry_strategy)
-        self.session.mount("http://", adapter)
-        self.session.mount("https://", adapter)
+class TextParser:
+    def __init__(self, url: str = ""):
+        self.url = url
+        self._skip_tags = {"script", "style", "noscript", "svg", "img"}
+        self.text_parts: List[str] = []
+        self._links: Set[str] = set()
 
-        if proxy:
-            self.session.proxies = {"http": proxy, "https": proxy}
-
-    def fetch(self, url: str) -> Optional[str]:
+    def parse(self, html_content: str):
         '''
-        Fetches HTML using requests with auto-decoding and decompression
+        Parses HTML content, extracting text and links while skipping certain tags
         '''
-        try:
-            headers = HeaderFactory.get_headers()
-            
-            response = self.session.get(url, 
-                                        headers=headers, 
-                                        timeout=self.timeout, 
-                                        allow_redirects=True)
-            
-            response.raise_for_status()
-            return response.text
-                
-        except Exception as e:
-            print(f"Error fetching {url}: {e}")
-            return None
+        tree = html.fromstring(html_content)
 
-    def _clean_list(self, items) -> Optional[List[str]]:
-        if not items: return None
-        res = sorted(set(i.strip() for i in items if i and i.strip()))
-        return res if res else None
+        for tag in self._skip_tags:
+            for el in tree.xpath(f"//{tag}"):
+                el.drop_tree()
 
-    def extract_socials(self, links: List[str]) -> Optional[Dict[str, List[str]]]:
-        socials = {"linkedin": [], "instagram": [], "whatsapp": [], "facebook": []}
-        patterns = {"linkedin": LINKEDIN_REGEX, 
-                    "instagram": INSTAGRAM_REGEX,
-                    "whatsapp": WHATSAPP_REGEX, 
-                    "facebook": FACEBOOK_REGEX}
-        
-        for link in links:
-            link_l = link.lower()
-            for platform, pattern in patterns.items():
-                if len(socials[platform]) < 3:
-                    match = pattern.search(link_l) if hasattr(pattern, 'search') else (pattern in link_l)
-                    if match:
-                        socials[platform].append(link)
-                        break
+        for text in tree.xpath("//text()"):
+            find_text = text.strip()
+            if len(find_text) >= MIN_TEXT_LEN and not find_text.isdigit():
+                self.text_parts.append(find_text)
 
-        cleaned = {k: self._clean_list(v) for k, v in socials.items()}
-        return {k: v for k, v in cleaned.items() if v} or None
+        for el in tree.xpath("//a[@href]"):
+            href = el.get("href")
+            if href:
+                full_url = urljoin(self.url, href)
+                if self._is_valid_link(full_url):
+                    self._links.add(full_url)
 
-    def run(self, url: str) -> Dict:
-        html = self.fetch(url)
-        
-        if not html:
-            return {"url": url, "emails": None, "phones": None, "socials": None, "status": "error"}
+    def _is_valid_link(self, url: str) -> bool:
+        '''
+        Basic validation to filter out non-HTTP links and common junk
+        '''
+        parsed = urlparse(url=url)
 
-        parser = HTMLTextExtractor()
-        parser.feed(html)
-        text, links = parser.get_text(), parser.get_links()
+        if parsed.scheme not in ("http", "https"):
+            return False
 
-        return {"url": url,
-                "emails": self._clean_list(EMAIL_REGEX.findall(text)),
-                "phones": self._clean_list(PHONE_REGEX.findall(text)),
-                "socials": self.extract_socials(links),
-                "status": "success"}
+        if any(x in url.lower() for x in ["javascript:", "#", "mailto:"]):
+            return False
 
-def process_sites(websites: List[str], max_workers: int = 10):
-    enricher = Enricher(timeout=10)
-    results = []
+        return True
 
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        future_to_url = {executor.submit(enricher.run, url): url for url in websites}
-        
-        for future in as_completed(future_to_url):
-            try:
-                data = future.result()
-                print(f"[{data['status'].upper()}] {data['url']}")
-                results.append(data)
-            except Exception as e:
-                print(f"CRITICAL ERROR for {future_to_url[future]}: {e}")
+    def get_text(self) -> str:
+        '''
+        Returns cleaned, deduplicated text content
+        '''
+        seen = set()
+        clean = []
 
-    return results
+        for text in self.text_parts:
+            if text not in seen:
+                seen.add(text)
+                clean.append(text)
 
-if __name__ == "__main__":
-    websites = websites = [
-    "https://www.zoho.com",
-    "https://www.flipkart.com",
-    "https://www.paytm.com",
-    "https://www.snapdeal.com",
-    "https://www.myntra.com",
-    "https://www.bigbasket.com",
-    "https://www.irctc.co.in",
-    "https://www.redbus.in",
-    "https://www.olaelectric.com",
-    "https://www.olacabs.com",
-    "https://www.swiggy.com",
-    "https://www.zomato.com",
-    "https://www.policybazaar.com",
-    "https://www.bankbazaar.com",
-    "https://www.dream11.com",
-    "https://www.byjus.com",
-    "https://www.unacademy.com",
-    "https://www.upgrad.com",
-    "https://www.freshworks.com",
-    "https://www.razorpay.com",
-    "https://www.cleartax.in",
-    "https://www.groww.in",
-    "https://www.zerodha.com",
-    "https://www.phonepe.com",
-    "https://www.naukri.com",
-    "https://www.99acres.com",
-    "https://www.magicbricks.com",
-    "https://www.indiamart.com",
-    "https://www.tradeindia.com",
-    "https://www.justdial.com"
-]
-    all_data = process_sites(websites)
-    
-    print(all_data, end="\n\n")
+        return " ".join(clean)
+
+    def get_links(self) -> List[str]:
+        '''
+        Returns the list of extracted links
+        '''
+        return list(self._links)

@@ -13,4 +13,4 @@ dependencies = []
 where = ["src"]
 
 [project.scripts]
-omni = "enrix.__main__:main"
+enrix = "enrix.__main__:main"
