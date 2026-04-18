@@ -142,6 +142,7 @@ settings.py
 - Multithreading improves speed for bulk processing  
 - Ensure input CSV has correct column (`websites`)  
 - Output schema remains consistent across runs  
+- To improve accuracy by improving regex patterns, and text parsing.
 
 ---
 
